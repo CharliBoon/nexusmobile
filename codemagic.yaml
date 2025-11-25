@@ -1,0 +1,71 @@
+workflows:
+  ios-workflow:
+    name: iOS Workflow
+    environment:
+      vars:
+        APP_ID: 4T56Y946KX.org.ims.nexusmobile
+      ios_signing:
+        distribution_type: ad_hoc # Key for a development build
+        bundle_identifier: org.ims.nexusmobile
+    scripts:
+      - name: Generate keystore file
+        script: |
+          echo $FIREBASE_IOS | base64 --decode > $CM_BUILD_DIR/ios/Runner/GoogleService-Info.plist
+      - name: Set up code signing settings on Xcode project
+        script: xcode-project use-profiles
+      - name: Get Flutter packages
+        script: flutter packages pub get
+      - name: Get Flutter dependencies
+        script: flutter pub get
+      - name: Update pods
+        script: pod repo update
+      - name: Install pods
+        script: find . -name "Podfile" -execdir pod install \;
+      - name: Flutter build ipa
+        script: flutter build ipa --export-options-plist=ios/export_options.plist
+
+        # Optional: you can switch to release if you need a development release
+        # script: flutter build ipa --release
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    publishing:
+      email:
+        recipients:
+          - charles.boon@imsi.org
+        notify:
+          success: true
+          failure: true
+
+  android-workflow:
+    name: Android Workflow
+    environment:
+      vars:
+        ANDROID_APP_ID: org.ims.nexusmobile
+    scripts:
+      - name: Generate google-services.json
+        script: |
+          echo $FIREBASE_ANDROID | base64 --decode > android/app/google-services.json
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Build Android Debug APK
+        script: flutter build apk --debug
+
+      # Optional: build AAB for Play Store upload (uncomment if needed)
+      # - name: Build Android App Bundle
+      #   script: flutter build appbundle --release
+
+    artifacts:
+      - build/app/outputs/flutter-apk/app-debug.apk
+      # - build/app/outputs/bundle/release/app-release.aab   # if building AAB
+
+    publishing:
+      email:
+        recipients:
+          - charles.boon@imsi.org
+        notify:
+          success: true
+          failure: false

@@ -1,0 +1,2 @@
+cat ~/Downloads/GoogleService-Info.plist | base64 | xclip -selection clipboard
+echo "Key copied to clipboard"
