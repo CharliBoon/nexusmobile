@@ -44,9 +44,9 @@ workflows:
       vars:
         ANDROID_APP_ID: org.ims.nexusmobile
     scripts:
-      - name: Generate google-services.json
-        script: |
-          echo $FIREBASE_ANDROID | base64 --decode > android/app/google-services.json
+      #- name: Generate google-services.json
+      #  script: |
+      #    echo $FIREBASE_ANDROID | base64 --decode > android/app/google-services.json
 
       - name: Get Flutter packages
         script: flutter pub get
