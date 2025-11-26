@@ -20,6 +20,10 @@ Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
+  SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.edgeToEdge,
+  );
+
   var connectivityResult = await Connectivity().checkConnectivity();
   for (var result in connectivityResult) {
     if (result == ConnectivityResult.none) {
@@ -87,6 +91,9 @@ Future<void> main() async {
 }
 
 class NexusMobile extends StatelessWidget {
+
+
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(

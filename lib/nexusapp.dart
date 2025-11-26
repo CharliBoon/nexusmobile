@@ -29,153 +29,131 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) async {
+        if (didPop) return;
+
+        if (await webViewController.canGoBack()) {
+          webViewController.goBack();
+        } else {
+          Navigator.of(context).maybePop();
+        }
+      },
       child: Scaffold(
-        body: Stack(children: [
-          Column(children: [
-            Expanded(
-              child: InAppWebView(
-                initialSettings: InAppWebViewSettings(
-                  javaScriptEnabled: true,
-                ),
-                initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
-                onWebViewCreated: (controller) {
-                  webViewController = controller;
-                },
-                onLoadStart: (controller, url) async {
-                  setState(() {
-                    _isCheckingMail = false;
-                    _dbName = '';
-                  });
-                },
-                onLoadStop: (controller, url) async {
-                  if (_firstLoad) {
-                    FlutterNativeSplash.remove();
-                    _firstLoad = false;
-                  }
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  Expanded(
+                    child: InAppWebView(
+                      initialSettings: InAppWebViewSettings(
+                        javaScriptEnabled: true,
+                        useHybridComposition: true,
+                      ),
+                      initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
+                      onWebViewCreated: (controller) {
+                        webViewController = controller;
+                      },
+                      onLoadStart: (controller, url) async {
+                        setState(() {
+                          _isCheckingMail = false;
+                          _dbName = '';
+                        });
+                      },
+                      onLoadStop: (controller, url) async {
+                        if (_firstLoad) {
+                          FlutterNativeSplash.remove();
+                          _firstLoad = false;
+                        }
 
-                  // Save cookies here
-                  if (url != null) {
-                    final cookies = await CookieManager.instance().getCookies(url: url);
-                    SharedPreferences prefs = await SharedPreferences.getInstance();
+                        if (url != null) {
+                          final cookies = await CookieManager.instance().getCookies(url: url);
+                          SharedPreferences prefs = await SharedPreferences.getInstance();
 
-                    for (var cookie in cookies) {
-                      await prefs.setString('cookie_${cookie.name}', cookie.value);
-                      print('Cooky: ${cookie.name}');
-                    }
-                    print("Cookies saved to SharedPreferences.");
-                  }
+                          for (var cookie in cookies) {
+                            await prefs.setString('cookie_${cookie.name}', cookie.value);
+                            print('Cooky: ${cookie.name}');
+                          }
+                          print("Cookies saved to SharedPreferences.");
+                        }
 
-                  if (url.toString().contains('login')) {
-                    setState(() {
-                      _isLoggedIn = false;
-                    });
-                    _startCheckingForEmail(controller);
-                  } else {
-                    setState(() {
-                      _isLoggedIn = true;
-                    });
-                    _startCheckingForDB(controller);
-                  }
-                },
-                onJsAlert: (controller, jsAlertRequest) async {
-                  String? nullableString = jsAlertRequest.message;
-                  String nonNullableString = nullableString ?? 'NO MESSAGE';
-
-                  return await showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('JS Alert'),
-                          content: Text(nonNullableString),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(
-                                  context,
-                                  JsAlertResponse(
-                                    handledByClient: true,
-                                    action: JsAlertResponseAction.CONFIRM,
-                                  )),
-                              child: const Text('OK'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(
-                                context,
-                                JsPromptResponse(
-                                  handledByClient: true,
-                                  action: JsPromptResponseAction.CANCEL,
-                                  value: '',
-                                ),
+                        if (url.toString().contains('login')) {
+                          setState(() {
+                            _isLoggedIn = false;
+                          });
+                          _startCheckingForEmail(controller);
+                        } else {
+                          setState(() {
+                            _isLoggedIn = true;
+                          });
+                          _startCheckingForDB(controller);
+                        }
+                      },
+                      onJsAlert: (controller, jsAlertRequest) async {
+                        String message = jsAlertRequest.message ?? 'NO MESSAGE';
+                        return await showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('JS Alert'),
+                                content: Text(message),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(
+                                      context,
+                                      JsAlertResponse(
+                                        handledByClient: true,
+                                        action: JsAlertResponseAction.CONFIRM,
+                                      ),
+                                    ),
+                                    child: const Text('OK'),
+                                  ),
+                                ],
                               ),
-                              child: const Text('Cancel'),
-                            ),
-                          ],
-                        ),
-                      ) ??
-                      JsAlertResponse(
-                        handledByClient: false,
-                      );
-                },
-                onProgressChanged: (controller, progress) {
-                  if (progress == 100) {
-                    setState(() {});
-                  }
-                },
+                            ) ??
+                            JsAlertResponse(
+                              handledByClient: false,
+                            );
+                      },
+                      onProgressChanged: (controller, progress) {
+                        if (progress == 100) {
+                          setState(() {});
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ]),
-        ]),
-        //bottomNavigationBar: !_isLoggedIn || _dbName.isEmpty
-        //    ? null
-        //    : Container(
-        //        color: Colors.white.withOpacity(0.1),
-        //child: SafeArea(
-        // child: Padding(
-        //  padding: const EdgeInsets.all(8.0),
-        //   child: ElevatedButton(
-        //    onPressed: () => _showManagePushDialog(),
-        //    style: ElevatedButton.styleFrom(
-        //       backgroundColor: const Color(0xFF051B2C).withOpacity(0.2),
-        //       foregroundColor: const Color(0xFF051B2C),
-        //       shadowColor: Colors.transparent,
-        //     ),
-        //    child: const Row(
-        //      mainAxisSize: MainAxisSize.min,
-        //      children: [
-        //        Icon(Icons.notifications, size: 20),
-        //         SizedBox(width: 8),
-        //        Text('Manage Push Notifications'),
-        //       ],
-        //    ),
-        //    ),
-        //),
-        //),
-        //   ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   void _startCheckingForEmail(InAppWebViewController controller) async {
-    if (_isCheckingMail) return; // Prevent multiple checks at the same time
+    if (_isCheckingMail) return;
     _isCheckingMail = true;
-    // Inject JavaScript to monitor the input field and store its value
+
     await controller.evaluateJavascript(source: """
-                        (function() {
-                          var observer = new MutationObserver(function(mutations) {
-                            mutations.forEach(function(mutation) {
-                              var inputField = document.querySelector('input[name="email"]');
-                              if (inputField) {
-                                inputField.addEventListener('input', function(event) {
-                                  if (inputField.value) {
-                                    window.emailValue = inputField.value;
-                                  }
-                                });
-                                observer.disconnect(); // Stop observing once the input field is found
-                              }
-                            });
-                          });
-                          observer.observe(document.body, { childList: true, subtree: true });
-                        })();
-                      """);
+      (function() {
+        var observer = new MutationObserver(function(mutations) {
+          mutations.forEach(function(mutation) {
+            var inputField = document.querySelector('input[name="email"]');
+            if (inputField) {
+              inputField.addEventListener('input', function(event) {
+                if (inputField.value) {
+                  window.emailValue = inputField.value;
+                }
+              });
+              observer.disconnect();
+            }
+          });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      })();
+    """);
 
     while (_isCheckingMail) {
       String? email = await controller.evaluateJavascript(source: "window.emailValue || null;") as String?;
@@ -192,23 +170,20 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   void _startCheckingForDB(InAppWebViewController controller) async {
     _isCheckingDB = true;
 
-    // Inject JavaScript to observe the DOM for the DB name
     await controller.evaluateJavascript(source: """
-    (function() {
-      var observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-          var dbField = document.getElementById('dbFooter');
-          if (dbField) {
-            window.dbNameValue = dbField.textContent || '';
-          }
+      (function() {
+        var observer = new MutationObserver(function(mutations) {
+          mutations.forEach(function(mutation) {
+            var dbField = document.getElementById('dbFooter');
+            if (dbField) {
+              window.dbNameValue = dbField.textContent || '';
+            }
+          });
         });
-      });
+        observer.observe(document.body, { childList: true, subtree: true });
+      })();
+    """);
 
-      observer.observe(document.body, { childList: true, subtree: true });
-    })();
-  """);
-
-    // Continuously check for the dbName until found
     while (_isCheckingDB) {
       String? dbName = await controller.evaluateJavascript(source: 'window.dbNameValue || null;') as String?;
 
