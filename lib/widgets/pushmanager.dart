@@ -1,17 +1,20 @@
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:uuid/uuid.dart';
-
 import '../utils/storageutils.dart';
 
 class PushManagerDialog extends StatefulWidget {
   final String selectedDB;
+  final String pushToken; // previously fetched from WebView
+  final InAppWebViewController webViewController;
 
   const PushManagerDialog({
     Key? key,
     required this.selectedDB,
+    required this.pushToken,
+    required this.webViewController,
   }) : super(key: key);
 
   @override
@@ -19,53 +22,22 @@ class PushManagerDialog extends StatefulWidget {
 }
 
 class _PushManagerDialogState extends State<PushManagerDialog> {
-  late bool notificationsEnabled = false;
+  bool notificationsEnabled = false;
+  bool isLoading = true;
   final FirebaseMessaging messaging = FirebaseMessaging.instance;
-  final database = FirebaseDatabase.instance;
-  bool isLoadingNotificationState = true;
 
   @override
   void initState() {
     super.initState();
-    _loadNotificationsState();
+    _initializePushState();
   }
 
-  DatabaseReference _getUserRef(String? email, String deviceUUID) {
-    final emailKey = email?.replaceAll('.', '').replaceAll('@', '');
-    final deviceKey = deviceUUID.replaceAll('.', '').replaceAll('@', '');
-    return database.ref('nexus_push_notifications/$emailKey-$deviceKey');
-  }
-
-  Future<void> _loadNotificationsState() async {
-    String? userEmail = await StorageUtils.getUserEmail();
-    String deviceUUID = await getDeviceUUID();
-
-    try {
-      final userRef = _getUserRef(userEmail, deviceUUID);
-
-      final DataSnapshot snapshot = await userRef.get();
-      bool hasPushToken = false;
-
-      if (snapshot.exists) {
-        // Load existing data
-        var userData = Map<String, dynamic>.from(snapshot.value as Map);
-
-        List<String> dbNames = (userData['dbNames'] ?? []).cast<String>();
-        if (dbNames.contains(widget.selectedDB)) {
-          hasPushToken = true;
-        }
-      }
-
-      setState(() {
-        notificationsEnabled = hasPushToken;
-      });
-    } catch (e) {
-      print('Failed to load notifications state: $e');
-    } finally {
-      setState(() {
-        isLoadingNotificationState = false; // Set loading to false once data is loaded
-      });
-    }
+  Future<void> _initializePushState() async {
+    // If we already have a push token, mark notifications as enabled
+    setState(() {
+      notificationsEnabled = widget.pushToken.isNotEmpty;
+      isLoading = false;
+    });
   }
 
   @override
@@ -87,10 +59,10 @@ class _PushManagerDialogState extends State<PushManagerDialog> {
                   child: Text(
                     'Enable for ${widget.selectedDB}',
                     style: const TextStyle(overflow: TextOverflow.ellipsis),
-                    maxLines: 1, // Prevents overflow with a single line
+                    maxLines: 1,
                   ),
                 ),
-                isLoadingNotificationState
+                isLoading
                     ? const SizedBox(
                   height: 24,
                   width: 24,
@@ -98,14 +70,13 @@ class _PushManagerDialogState extends State<PushManagerDialog> {
                 )
                     : Switch(
                   value: notificationsEnabled,
-                        onChanged: (bool value) {
-                          setState(() {
-                            notificationsEnabled = value;
-                            registerForPush(value);
-                          });
-                          StorageUtils.savePush(value);
-                        },
-                      ),
+                  onChanged: (value) {
+                    setState(() {
+                      notificationsEnabled = value;
+                    });
+                    _handlePushSwitch(value);
+                  },
+                ),
               ],
             ),
           ],
@@ -120,116 +91,82 @@ class _PushManagerDialogState extends State<PushManagerDialog> {
     );
   }
 
-  Future<void> registerForPush(bool isEnabled) async {
-    String? userEmail = await StorageUtils.getUserEmail();
-    String deviceUUID = await getDeviceUUID();
-    final userRef = _getUserRef(userEmail, deviceUUID);
+  Future<void> _handlePushSwitch(bool enable) async {
+    if (enable) {
+      // Step 1: Request permission
+      final settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
 
-    if (userEmail == null || userEmail.isEmpty) {
-      print('User email is null or empty. Cannot proceed.');
-      return;
-    }
-
-    if (isEnabled) {
-      await requestPermission();
-      String? token = await messaging.getToken();
-
-      if (token != null) {
-        try {
-          final DataSnapshot snapshot = await userRef.get();
-
-          Map<String, dynamic> userData = {};
-          if (snapshot.exists) {
-            // Load existing data
-            userData = Map<String, dynamic>.from(snapshot.value as Map);
-          }
-
-          // Update or initialize the "dbNames" list
-          List<String> dbNames = List<String>.from(userData['dbNames'] ?? []);
-          if (!dbNames.contains(widget.selectedDB)) {
-            dbNames.add(widget.selectedDB);
-          }
-
-          // Save updated user data
-          userData['email'] = userEmail;
-          userData['deviceUUID'] = deviceUUID;
-          userData['token'] = token;
-          userData['dbNames'] = dbNames;
-          userData['updatedAt'] = DateTime.now().toIso8601String();
-
-          await userRef.set(userData);
-          print('Token and DB names saved successfully to Realtime Database');
-
-          setState(() {
-            notificationsEnabled = true;
-          });
-        } catch (e) {
-          print('Failed to save token and DB names: $e');
-        }
-      }
-    } else {
-      try {
-        final DataSnapshot snapshot = await userRef.get();
-
-        if (snapshot.exists) {
-          // Load existing data
-          Map<String, dynamic> userData = Map<String, dynamic>.from(snapshot.value as Map);
-
-          // Update the "dbNames" listlocate
-          List<String> dbNames = List<String>.from(userData['dbNames'] ?? []);
-          dbNames.remove(widget.selectedDB);
-
-          if (dbNames.isEmpty) {
-            // If no DB names are left, remove the user entry
-            await userRef.remove();
-            print('User with email $userEmail deleted from Realtime Database.');
-          } else {
-            // Otherwise, update the user entry
-            userData['dbNames'] = dbNames;
-            userData['updatedAt'] = DateTime.now().toIso8601String();
-            userData['deviceUUID'] = deviceUUID;
-
-            await userRef.set(userData);
-            print('DB name ${widget.selectedDB} removed for user $userEmail.');
-          }
-        }
-
+      if (settings.authorizationStatus != AuthorizationStatus.authorized) {
+        print('User denied notification permission');
         setState(() {
           notificationsEnabled = false;
         });
-      } catch (e) {
-        print('Failed to delete DB name for user: $e');
+        return;
       }
-    }
-  }
 
-  Future<void> requestPermission() async {
-    final settings = await messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+      // Step 2: Get Firebase push token
+      String? firebaseToken = await messaging.getToken();
+      if (firebaseToken == null || firebaseToken.isEmpty) {
+        print('Failed to get Firebase token');
+        setState(() {
+          notificationsEnabled = false;
+        });
+        return;
+      }
 
-    if (settings.authorizationStatus != AuthorizationStatus.authorized) {
-      print('User denied permissions');
+      // Step 3: Inject JS into WebView to save push token via session cookie
+      try {
+        String? result = await widget.webViewController.evaluateJavascript(source: """
+          (async function() {
+            try {
+              const response = await fetch('/ims-web-admin/resources/databases/remote/check/savePushToken', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ pushToken: '$firebaseToken' })
+              });
+              const data = await response.json();
+              return JSON.stringify(data);
+            } catch(e) {
+              return null;
+            }
+          })();
+        """) as String?;
+
+        if (result != null) {
+          final Map<String, dynamic> jsonData = Map<String, dynamic>.from(jsonDecode(result));
+          if (jsonData['pushTokenSuccess'] == true) {
+            print('Push token saved successfully: ${jsonData['pushToken']}');
+            setState(() {
+              notificationsEnabled = true;
+            });
+          } else {
+            print('Failed to save push token on server');
+            setState(() {
+              notificationsEnabled = false;
+            });
+          }
+        } else {
+          print('Push token request returned null');
+          setState(() {
+            notificationsEnabled = false;
+          });
+        }
+      } catch (e) {
+        print('Error saving push token via WebView: $e');
+        setState(() {
+          notificationsEnabled = false;
+        });
+      }
+    } else {
       setState(() {
         notificationsEnabled = false;
       });
+      print('Push notifications disabled');
     }
-  }
-
-  Future<String> getDeviceUUID() async {
-    var deviceInfo = DeviceInfoPlugin();
-    String uuid = const Uuid().v4();
-
-    if (Theme.of(context).platform == TargetPlatform.iOS) {
-      IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
-      uuid = iosInfo.identifierForVendor ?? uuid;
-    } else if (Theme.of(context).platform == TargetPlatform.android) {
-      AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-      uuid = androidInfo.id ?? uuid;
-    }
-
-    return uuid;
   }
 }

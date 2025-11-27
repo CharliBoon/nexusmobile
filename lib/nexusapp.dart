@@ -21,6 +21,7 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   bool _isCheckingDB = false;
   bool _firstLoad = true;
   String _dbName = '';
+  String _pushToken = '';
 
   @override
   void initState() {
@@ -123,6 +124,19 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                       },
                     ),
                   ),
+                  if (_dbName.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 10, right: 10),
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.notifications),
+                        label: const Text('Enable Notifications'),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 30),
+                          textStyle: const TextStyle(fontSize: 16),
+                        ),
+                        onPressed: _showManagePushDialog, // your existing method
+                      ),
+                    ),
                 ],
               ),
             ],
@@ -170,38 +184,74 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   void _startCheckingForDB(InAppWebViewController controller) async {
     _isCheckingDB = true;
 
+    // Observe the DB field in the page
     await controller.evaluateJavascript(source: """
-      (function() {
-        var observer = new MutationObserver(function(mutations) {
-          mutations.forEach(function(mutation) {
-            var dbField = document.getElementById('dbFooter');
-            if (dbField) {
-              window.dbNameValue = dbField.textContent || '';
-            }
-          });
+    (function() {
+      var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+          var dbField = document.getElementById('dbFooter');
+          if (dbField) {
+            window.dbNameValue = dbField.textContent || '';
+          }
         });
-        observer.observe(document.body, { childList: true, subtree: true });
-      })();
-    """);
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    })();
+  """);
 
     while (_isCheckingDB) {
+      // Get the DB name from the page
       String? dbName = await controller.evaluateJavascript(source: 'window.dbNameValue || null;') as String?;
 
       if (dbName != null && dbName.isNotEmpty) {
         List<String> split = dbName.split(' ');
         String processedDBName = split.last.trim();
+
         if (processedDBName.contains('IMS') && _dbName != processedDBName) {
           setState(() {
             _dbName = processedDBName;
             _isLoggedIn = true;
             _isCheckingDB = false;
           });
+
+          // ---- NEW: fetch push token using session cookies ----
+          try {
+            String? pushToken = await controller.evaluateJavascript(source: """
+            (async function() {
+              try {
+                // Send request to your backend using fetch
+                const response = await fetch('/ims-nexus/resources/databases/firebase/requestPushToken', {
+                  method: 'POST',
+                  credentials: 'include' // <--- important: includes all cookies from this WebView
+                });
+                const data = await response.json();
+                return data.pushToken || null;
+              } catch(e) {
+                return null;
+              }
+            })();
+          """) as String?;
+
+            if (pushToken != null && pushToken.isNotEmpty) {
+              print('Push token from backend: $pushToken');
+
+              setState(() {
+                _pushToken = pushToken;
+              });
+
+            } else {
+              print('No push token returned');
+            }
+          } catch (e) {
+            print('Failed to fetch push token: $e');
+          }
         }
       } else {
         setState(() {
           _dbName = '';
         });
       }
+
       await Future.delayed(const Duration(seconds: 1));
     }
   }
@@ -211,6 +261,8 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
       context: context,
       builder: (context) => PushManagerDialog(
         selectedDB: _dbName,
+        pushToken: _pushToken,
+        webViewController: webViewController,
       ),
     );
   }

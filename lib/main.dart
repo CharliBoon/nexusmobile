@@ -15,6 +15,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 final _messageStreamController = BehaviorSubject<RemoteMessage>();
 String _currentUrl = 'https://nexus.imseismology.org';
+//String _currentUrl = 'https://10.0.2.2:12305'; // DEV -> HK47
+//String _currentUrl = 'https://nexus.imseismology.org:12305'; // DEV -> HK47
 
 Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -91,9 +93,6 @@ Future<void> main() async {
 }
 
 class NexusMobile extends StatelessWidget {
-
-
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
