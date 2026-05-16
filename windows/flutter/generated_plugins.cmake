@@ -4,7 +4,6 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
-  cloud_firestore
   connectivity_plus
   desktop_webview_window
   firebase_auth
