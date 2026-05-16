@@ -13,6 +13,9 @@ workflows:
           echo $FIREBASE_IOS | base64 --decode > $CM_BUILD_DIR/ios/Runner/GoogleService-Info.plist
       - name: Set up code signing settings on Xcode project
         script: xcode-project use-profiles
+      - name: Force iOS 15.0 Deployment Target
+        script: |
+          find . -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
       - name: Get Flutter packages
         script: flutter packages pub get
       - name: Get Flutter dependencies
