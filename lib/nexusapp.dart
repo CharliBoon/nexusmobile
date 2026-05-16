@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class NexusWebViewApp extends StatefulWidget {
   final String initialUrl;
 
-  NexusWebViewApp({required this.initialUrl});
+  const NexusWebViewApp({super.key, required this.initialUrl});
 
   @override
   _NexusWebViewAppState createState() => _NexusWebViewAppState();
@@ -124,19 +124,19 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                       },
                     ),
                   ),
-                  if (_dbName.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 10, right: 10),
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.notifications),
-                        label: const Text('Enable Notifications'),
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 30),
-                          textStyle: const TextStyle(fontSize: 16),
-                        ),
-                        onPressed: _showManagePushDialog, // your existing method
-                      ),
-                    ),
+                  //if (_dbName.isNotEmpty)
+                  //  Padding(
+                  //    padding: const EdgeInsets.only(left: 10, right: 10),
+                  //    child: ElevatedButton.icon(
+                  //      icon: const Icon(Icons.notifications),
+                  //      label: const Text('Enable Notifications'),
+                  //      style: ElevatedButton.styleFrom(
+                  //        minimumSize: const Size(double.infinity, 30),
+                  //        textStyle: const TextStyle(fontSize: 16),
+                  //      ),
+                  //      onPressed: _showManagePushDialog, // your existing method
+                  //    ),
+                  //  ),
                 ],
               ),
             ],

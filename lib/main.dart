@@ -71,28 +71,30 @@ Future<void> main() async {
     }
   }
 
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  }
+  //if (Firebase.apps.isEmpty) {
+  //  await Firebase.initializeApp(
+  //    options: DefaultFirebaseOptions.currentPlatform,
+  //  );
+ // }
 
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    _messageStreamController.sink.add(message);
-  });
+  //FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+  //  _messageStreamController.sink.add(message);
+ // });
 
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+ // FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    if (message.data.containsKey('nexusurl')) {
-      _currentUrl = message.data['nexusurl'];
-    }
-  });
+  //FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+  //  if (message.data.containsKey('nexusurl')) {
+  //    _currentUrl = message.data['nexusurl'];
+  //  }
+  //});
 
   runApp(NexusMobile());
 }
 
 class NexusMobile extends StatelessWidget {
+  const NexusMobile({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(

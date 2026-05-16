@@ -2,8 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:uuid/uuid.dart';
-import '../utils/storageutils.dart';
 
 class PushManagerDialog extends StatefulWidget {
   final String selectedDB;
@@ -11,11 +9,11 @@ class PushManagerDialog extends StatefulWidget {
   final InAppWebViewController webViewController;
 
   const PushManagerDialog({
-    Key? key,
+    super.key,
     required this.selectedDB,
     required this.pushToken,
     required this.webViewController,
-  }) : super(key: key);
+  });
 
   @override
   _PushManagerDialogState createState() => _PushManagerDialogState();
