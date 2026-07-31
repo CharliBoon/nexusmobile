@@ -8,9 +8,6 @@ workflows:
         distribution_type: development # Key for a development build
         bundle_identifier: org.ims.nexusmobile
     scripts:
-      - name: Generate keystore file
-        script: |
-          echo $FIREBASE_IOS | base64 --decode > $CM_BUILD_DIR/ios/Runner/GoogleService-Info.plist
       - name: Set up code signing settings on Xcode project
         script: xcode-project use-profiles
       #- name: Force iOS 15.0 Deployment Target
@@ -47,10 +44,6 @@ workflows:
       vars:
         ANDROID_APP_ID: org.ims.nexusmobile
     scripts:
-      #- name: Generate google-services.json
-      #  script: |
-      #    echo $FIREBASE_ANDROID | base64 --decode > android/app/google-services.json
-
       - name: Get Flutter packages
         script: flutter pub get
 

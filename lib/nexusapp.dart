@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:nexusmobile/utils/storageutils.dart';
-import 'package:nexusmobile/widgets/pushmanager.dart';
+import 'package:nexusmobile/widgets/nexus_splash_overlay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NexusWebViewApp extends StatefulWidget {
@@ -20,8 +19,8 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   bool _isCheckingMail = false;
   bool _isCheckingDB = false;
   bool _firstLoad = true;
+  bool _showSplash = true;
   String _dbName = '';
-  String _pushToken = '';
 
   @override
   void initState() {
@@ -65,8 +64,10 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                       },
                       onLoadStop: (controller, url) async {
                         if (_firstLoad) {
-                          FlutterNativeSplash.remove();
                           _firstLoad = false;
+                          setState(() {
+                            _showSplash = false;
+                          });
                         }
 
                         if (url != null) {
@@ -124,20 +125,13 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                       },
                     ),
                   ),
-                  //if (_dbName.isNotEmpty)
-                  //  Padding(
-                  //    padding: const EdgeInsets.only(left: 10, right: 10),
-                  //    child: ElevatedButton.icon(
-                  //      icon: const Icon(Icons.notifications),
-                  //      label: const Text('Enable Notifications'),
-                  //      style: ElevatedButton.styleFrom(
-                  //        minimumSize: const Size(double.infinity, 30),
-                  //        textStyle: const TextStyle(fontSize: 16),
-                  //      ),
-                  //      onPressed: _showManagePushDialog, // your existing method
-                  //    ),
-                  //  ),
                 ],
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                child: _showSplash
+                    ? const NexusSplashOverlay(key: ValueKey('splash'))
+                    : const SizedBox.shrink(key: ValueKey('empty')),
               ),
             ],
           ),
@@ -213,38 +207,6 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
             _isLoggedIn = true;
             _isCheckingDB = false;
           });
-
-          // ---- NEW: fetch push token using session cookies ----
-          try {
-            String? pushToken = await controller.evaluateJavascript(source: """
-            (async function() {
-              try {
-                // Send request to your backend using fetch
-                const response = await fetch('/ims-nexus/resources/databases/firebase/requestPushToken', {
-                  method: 'POST',
-                  credentials: 'include' // <--- important: includes all cookies from this WebView
-                });
-                const data = await response.json();
-                return data.pushToken || null;
-              } catch(e) {
-                return null;
-              }
-            })();
-          """) as String?;
-
-            if (pushToken != null && pushToken.isNotEmpty) {
-              print('Push token from backend: $pushToken');
-
-              setState(() {
-                _pushToken = pushToken;
-              });
-
-            } else {
-              print('No push token returned');
-            }
-          } catch (e) {
-            print('Failed to fetch push token: $e');
-          }
         }
       } else {
         setState(() {
@@ -254,16 +216,5 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
 
       await Future.delayed(const Duration(seconds: 1));
     }
-  }
-
-  void _showManagePushDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => PushManagerDialog(
-        selectedDB: _dbName,
-        pushToken: _pushToken,
-        webViewController: webViewController,
-      ),
-    );
   }
 }

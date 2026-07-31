@@ -6,8 +6,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   connectivity_plus
   desktop_webview_window
-  firebase_core
-  firebase_database
   flutter_inappwebview_windows
   permission_handler_windows
   url_launcher_windows
@@ -15,7 +13,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
-  flutter_local_notifications_windows
   jni
 )
 

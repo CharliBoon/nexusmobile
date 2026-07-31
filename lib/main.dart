@@ -1,19 +1,10 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
-import 'package:rxdart/rxdart.dart';
 
-import 'firebase_options.dart';
 import 'nexusapp.dart';
 
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('Handling a background message: ${message.messageId}');
-}
-
-final _messageStreamController = BehaviorSubject<RemoteMessage>();
 String _currentUrl = 'https://nexus.imseismology.org';
 //String _currentUrl = 'https://10.0.2.2:12305'; // DEV -> HK47
 //String _currentUrl = 'https://nexus.imseismology.org:12305'; // DEV -> HK47
@@ -71,25 +62,8 @@ Future<void> main() async {
     }
   }
 
-  //if (Firebase.apps.isEmpty) {
-  //  await Firebase.initializeApp(
-  //    options: DefaultFirebaseOptions.currentPlatform,
-  //  );
- // }
-
-  //FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-  //  _messageStreamController.sink.add(message);
- // });
-
- // FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-  //FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-  //  if (message.data.containsKey('nexusurl')) {
-  //    _currentUrl = message.data['nexusurl'];
-  //  }
-  //});
-
   runApp(NexusMobile());
+  FlutterNativeSplash.remove();
 }
 
 class NexusMobile extends StatelessWidget {
