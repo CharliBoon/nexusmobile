@@ -51,6 +51,8 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                       initialSettings: InAppWebViewSettings(
                         javaScriptEnabled: true,
                         useHybridComposition: true,
+                        supportMultipleWindows: true,
+                        javaScriptCanOpenWindowsAutomatically: true,
                       ),
                       initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
                       onWebViewCreated: (controller) {
@@ -123,6 +125,7 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                           setState(() {});
                         }
                       },
+                      onCreateWindow: (controller, createWindowAction) => _openPopupWindow(createWindowAction),
                     ),
                   ),
                 ],
@@ -138,6 +141,30 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
         ),
       ),
     );
+  }
+
+  Future<bool> _openPopupWindow(CreateWindowAction createWindowAction) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+          body: SafeArea(
+            child: InAppWebView(
+              windowId: createWindowAction.windowId,
+              initialSettings: InAppWebViewSettings(javaScriptEnabled: true),
+              onCloseWindow: (controller) => Navigator.of(context).pop(),
+            ),
+          ),
+        ),
+      ),
+    );
+    return true;
   }
 
   void _startCheckingForEmail(InAppWebViewController controller) async {
