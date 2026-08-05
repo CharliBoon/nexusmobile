@@ -167,7 +167,7 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
           body: SafeArea(
             bottom: false,
             child: Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom * 0.5),
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom * 0.6),
               child: InAppWebView(
                 windowId: createWindowAction.windowId,
                 initialSettings: InAppWebViewSettings(javaScriptEnabled: true),
