@@ -42,6 +42,7 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
       },
       child: Scaffold(
         body: SafeArea(
+          bottom: false,
           child: Stack(
             children: [
               Column(
@@ -144,6 +145,16 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   }
 
   Future<bool> _openPopupWindow(CreateWindowAction createWindowAction) async {
+    final popupHost = createWindowAction.request.url?.host ?? '';
+    if (popupHost.contains('google.com')) {
+      // Forget any existing Google session so the account picker is shown
+      // every time, instead of silently reusing the last signed-in account.
+      await CookieManager.instance().deleteCookies(
+        url: WebUri('https://accounts.google.com'),
+        domain: '.google.com',
+      );
+    }
+
     await Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -155,6 +166,7 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
             ),
           ),
           body: SafeArea(
+            bottom: false,
             child: InAppWebView(
               windowId: createWindowAction.windowId,
               initialSettings: InAppWebViewSettings(javaScriptEnabled: true),
