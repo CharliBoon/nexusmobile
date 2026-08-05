@@ -43,7 +43,9 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
       child: Scaffold(
         body: SafeArea(
           bottom: false,
-          child: Stack(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom * 0.5),
+            child: Stack(
             children: [
               Column(
                 children: [
@@ -138,6 +140,7 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                     : const SizedBox.shrink(key: ValueKey('empty')),
               ),
             ],
+            ),
           ),
         ),
       ),
@@ -145,15 +148,11 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   }
 
   Future<bool> _openPopupWindow(CreateWindowAction createWindowAction) async {
-    final popupHost = createWindowAction.request.url?.host ?? '';
-    if (popupHost.contains('google.com')) {
-      // Forget any existing Google session so the account picker is shown
-      // every time, instead of silently reusing the last signed-in account.
-      await CookieManager.instance().deleteCookies(
-        url: WebUri('https://accounts.google.com'),
-        domain: '.google.com',
-      );
-    }
+    // Forget any existing Google session so the account picker is shown
+    // every time, instead of silently reusing the last signed-in account.
+    // Popups can start on 'about:blank' before JS navigates them to the
+    // real Google URL, so this isn't gated on the popup's initial host.
+    await _forgetGoogleSession();
 
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -167,16 +166,29 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
           ),
           body: SafeArea(
             bottom: false,
-            child: InAppWebView(
-              windowId: createWindowAction.windowId,
-              initialSettings: InAppWebViewSettings(javaScriptEnabled: true),
-              onCloseWindow: (controller) => Navigator.of(context).pop(),
+            child: Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom * 0.5),
+              child: InAppWebView(
+                windowId: createWindowAction.windowId,
+                initialSettings: InAppWebViewSettings(javaScriptEnabled: true),
+                onCloseWindow: (controller) => Navigator.of(context).pop(),
+              ),
             ),
           ),
         ),
       ),
     );
     return true;
+  }
+
+  Future<void> _forgetGoogleSession() async {
+    for (final host in ['accounts.google.com', 'google.com', 'www.google.com']) {
+      final url = WebUri('https://$host');
+      final cookies = await CookieManager.instance().getCookies(url: url);
+      for (final cookie in cookies) {
+        await CookieManager.instance().deleteCookie(url: url, name: cookie.name);
+      }
+    }
   }
 
   void _startCheckingForEmail(InAppWebViewController controller) async {
