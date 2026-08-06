@@ -5,9 +5,7 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 import 'nexusapp.dart';
 
-String _currentUrl = 'https://nexus.imseismology.org';
-//String _currentUrl = 'https://10.0.2.2:12305'; // DEV -> HK47
-//String _currentUrl = 'https://nexus.imseismology.org:12305'; // DEV -> HK47
+String _currentUrl = 'https://nexus.imsi.org';
 
 Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();

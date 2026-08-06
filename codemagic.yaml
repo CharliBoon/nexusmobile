@@ -38,6 +38,39 @@ workflows:
           success: true
           failure: true
 
+  ios-appstore-workflow:
+    name: iOS App Store Workflow
+    environment:
+      vars:
+        APP_ID: 4T56Y946KX.org.ims.nexusmobile
+      ios_signing:
+        distribution_type: app_store # Uses IMS-Nexus-Release-Profile + a production certificate
+        bundle_identifier: org.ims.nexusmobile
+    scripts:
+      - name: Set up code signing settings on Xcode project
+        script: xcode-project use-profiles
+      - name: Get Flutter packages
+        script: flutter packages pub get
+      - name: Get Flutter dependencies
+        script: flutter pub get
+      - name: Update pods
+        script: pod repo update
+      - name: Install pods
+        script: find . -name "Podfile" -execdir pod install \;
+      - name: Flutter build ipa
+        script: flutter build ipa --release --export-options-plist=$HOME/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    publishing:
+      email:
+        recipients:
+          - charles.boon@imsi.org
+        notify:
+          success: true
+          failure: true
+
   android-workflow:
     name: Android Workflow
     environment:

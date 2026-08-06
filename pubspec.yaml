@@ -85,7 +85,6 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/icon/
-    - assets/splash.png
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 
@@ -131,9 +130,9 @@ flutter_native_splash:
   # splash screen to a png image.  This is useful for gradients. The image will be stretch to the
   # size of the app. Only one parameter can be used, color and background_image cannot both be set.
   color: "#051B2C"
-  background_image: "assets/splash.png"
+  background_image: "assets/icon/icon-2.png"
 
   # The image parameter allows you to specify an image used in the splash screen.  It must be a
   # png file and should be sized for 4x pixel density.
-  image: assets/splash.png
+  image: assets/icon/icon-2.png
 

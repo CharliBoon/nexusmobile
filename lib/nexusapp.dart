@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:nexusmobile/utils/storageutils.dart';
 import 'package:nexusmobile/widgets/nexus_splash_overlay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,7 +15,6 @@ class NexusWebViewApp extends StatefulWidget {
 class _NexusWebViewAppState extends State<NexusWebViewApp> {
   late InAppWebViewController webViewController;
   bool _isLoggedIn = false;
-  bool _isCheckingMail = false;
   bool _isCheckingDB = false;
   bool _firstLoad = true;
   bool _showSplash = true;
@@ -63,7 +61,6 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                       },
                       onLoadStart: (controller, url) async {
                         setState(() {
-                          _isCheckingMail = false;
                           _dbName = '';
                         });
                       },
@@ -90,7 +87,6 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                           setState(() {
                             _isLoggedIn = false;
                           });
-                          _startCheckingForEmail(controller);
                         } else {
                           setState(() {
                             _isLoggedIn = true;
@@ -188,41 +184,6 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
       for (final cookie in cookies) {
         await CookieManager.instance().deleteCookie(url: url, name: cookie.name);
       }
-    }
-  }
-
-  void _startCheckingForEmail(InAppWebViewController controller) async {
-    if (_isCheckingMail) return;
-    _isCheckingMail = true;
-
-    await controller.evaluateJavascript(source: """
-      (function() {
-        var observer = new MutationObserver(function(mutations) {
-          mutations.forEach(function(mutation) {
-            var inputField = document.querySelector('input[name="email"]');
-            if (inputField) {
-              inputField.addEventListener('input', function(event) {
-                if (inputField.value) {
-                  window.emailValue = inputField.value;
-                }
-              });
-              observer.disconnect();
-            }
-          });
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-      })();
-    """);
-
-    while (_isCheckingMail) {
-      String? email = await controller.evaluateJavascript(source: "window.emailValue || null;") as String?;
-      if (email != null && email.isNotEmpty) {
-        print('Detected email: $email');
-        StorageUtils.saveUserEmail(email);
-        setState(() {});
-      }
-
-      await Future.delayed(const Duration(seconds: 1));
     }
   }
 

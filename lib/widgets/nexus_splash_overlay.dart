@@ -70,7 +70,7 @@ class _NexusSplashOverlayState extends State<NexusSplashOverlay> with SingleTick
                       ],
                     ),
                     child: Image.asset(
-                      'assets/splash.png',
+                      'assets/icon/icon-2.png',
                       width: 96,
                       height: 96,
                     ),
