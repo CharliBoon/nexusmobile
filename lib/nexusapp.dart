@@ -54,6 +54,13 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                         useHybridComposition: true,
                         supportMultipleWindows: true,
                         javaScriptCanOpenWindowsAutomatically: true,
+                        // The webapp handles its own zoom/pan (e.g. the 3D plot); the
+                        // native WebView must never intercept pinch/double-tap zoom.
+                        supportZoom: false,
+                        builtInZoomControls: false,
+                        displayZoomControls: false,
+                        minimumZoomScale: 1.0,
+                        maximumZoomScale: 1.0,
                       ),
                       initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
                       onWebViewCreated: (controller) {
