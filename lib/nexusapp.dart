@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nexusmobile/widgets/nexus_splash_overlay.dart';
@@ -88,6 +90,10 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                             print('Cooky: ${cookie.name}');
                           }
                           print("Cookies saved to SharedPreferences.");
+                        }
+
+                        if (Platform.isIOS) {
+                          await _hideGoogleSignInButton(controller);
                         }
 
                         if (url.toString().contains('login')) {
@@ -182,6 +188,29 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
       ),
     );
     return true;
+  }
+
+  // Apple Guideline 4.8 requires an Apple-equivalent alongside any third-party login.
+  // The webapp's "Sign in with email" already requires the same manual account
+  // approval as Google, so on iOS we simply don't offer the Google option at all
+  Future<void> _hideGoogleSignInButton(InAppWebViewController controller) async {
+    await controller.evaluateJavascript(source: """
+      (function() {
+        function hideGoogleSignIn() {
+          document.querySelectorAll('button').forEach(function(btn) {
+            var text = (btn.innerText || '').trim().toLowerCase();
+            if (text.indexOf('sign in with google') !== -1) {
+              btn.style.display = 'none';
+            }
+          });
+        }
+        hideGoogleSignIn();
+        if (!window.__nexusHideGoogleObserver) {
+          window.__nexusHideGoogleObserver = new MutationObserver(hideGoogleSignIn);
+          window.__nexusHideGoogleObserver.observe(document.body, { childList: true, subtree: true });
+        }
+      })();
+    """);
   }
 
   Future<void> _forgetGoogleSession() async {
