@@ -44,12 +44,12 @@ workflows:
       vars:
         APP_ID: 4T56Y946KX.org.ims.nexusmobile
       ios_signing:
-        distribution_type: app_store # Uses IMS-Nexus-Release-Profile + a production certificate
+        distribution_type: app_store
         bundle_identifier: org.ims.nexusmobile
     scripts:
       - name: Set up code signing settings on Xcode project
-        script:
-          xcode-project use-profiles --custom-export-options='{"generateAppStoreInformation": true}'
+        script: |
+            xcode-project use-profiles --custom-export-options='{"generateAppStoreInformation": true}'
       - name: Get Flutter packages
         script: flutter packages pub get
       - name: Get Flutter dependencies
@@ -61,10 +61,10 @@ workflows:
       - name: Flutter build ipa
         script: flutter build ipa --release --export-options-plist=$HOME/export_options.plist
     artifacts:
-        - build/ios/ipa/*.ipa
-        - build/ios/ipa/*.plist
-        - /tmp/xcodebuild_logs/*.log
-        - flutter_drive.log
+      - build/ios/ipa/*.ipa
+      - build/ios/ipa/*.plist
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
     publishing:
       email:
         recipients:
