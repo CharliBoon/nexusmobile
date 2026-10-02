@@ -203,8 +203,8 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                                 }
 
                                 if (Platform.isIOS) {
-                                  await _hideGoogleSignInButton(controller);
-                                  await _hideMicrosoftSignInButton(controller);
+                                  //await _hideGoogleSignInButton(controller);
+                                  //await _hideMicrosoftSignInButton(controller);
                                 }
 
                                 if (url.toString().contains('login')) {
