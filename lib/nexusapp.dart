@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection' show UnmodifiableListView;
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -158,11 +159,19 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                                 displayZoomControls: false,
                                 minimumZoomScale: 1.0,
                                 maximumZoomScale: 1.0,
-                                // use open
-                                useOnDownloadStart: true,
+                                // use platform pdf explorer?
+                                useOnDownloadStart: true
                               ),
                               initialUrlRequest:
                                   URLRequest(url: WebUri(widget.initialUrl)),
+                              // Lets the webapp's own JS check if it's the app on every page, before any other JS runs
+                              initialUserScripts: UnmodifiableListView<UserScript>([
+                                UserScript(
+                                  source: 'window.NexusMobileApp = true;',
+                                  injectionTime:
+                                      UserScriptInjectionTime.AT_DOCUMENT_START,
+                                ),
+                              ]),
                               onWebViewCreated: (controller) {
                                 webViewController = controller;
                               },
@@ -183,31 +192,41 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                                   });
                                 }
 
+                                final isLoginPage =
+                                    url.toString().contains('login');
+
                                 if (url != null) {
-                                  final cookies = await CookieManager.instance()
-                                      .getCookies(url: url);
                                   SharedPreferences prefs =
                                       await SharedPreferences.getInstance();
 
-                                  final savedCookies = cookies
-                                      .map((cookie) => {
-                                            'name': cookie.name,
-                                            'value': cookie.value,
-                                            'domain': cookie.domain ?? url.host,
-                                            'path': cookie.path ?? '/',
-                                            'isSecure': cookie.isSecure,
-                                          })
-                                      .toList();
-                                  await prefs.setString(_cookieStoreKey,
-                                      jsonEncode(savedCookies));
+                                  if (isLoginPage) {
+                                    // Logged out (or session expired) - don't persist whatever's left in the cookie jar
+                                    await prefs.remove(_cookieStoreKey);
+                                  } else {
+                                    final cookies = await CookieManager
+                                        .instance()
+                                        .getCookies(url: url);
+                                    final savedCookies = cookies
+                                        .map((cookie) => {
+                                              'name': cookie.name,
+                                              'value': cookie.value,
+                                              'domain':
+                                                  cookie.domain ?? url.host,
+                                              'path': cookie.path ?? '/',
+                                              'isSecure': cookie.isSecure,
+                                            })
+                                        .toList();
+                                    await prefs.setString(_cookieStoreKey,
+                                        jsonEncode(savedCookies));
+                                  }
                                 }
 
                                 if (Platform.isIOS) {
-                                  //await _hideGoogleSignInButton(controller);
-                                  //await _hideMicrosoftSignInButton(controller);
+                                  await _hideGoogleSignInButton(controller);
+                                  await _hideMicrosoftSignInButton(controller);
                                 }
 
-                                if (url.toString().contains('login')) {
+                                if (isLoginPage) {
                                   setState(() {
                                     _isLoggedIn = false;
                                   });
