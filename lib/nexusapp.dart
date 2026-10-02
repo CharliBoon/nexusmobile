@@ -1,18 +1,27 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nexusmobile/widgets/nexus_splash_overlay.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NexusWebViewApp extends StatefulWidget {
   final String initialUrl;
+  final String fallbackUrl;
 
-  const NexusWebViewApp({super.key, required this.initialUrl});
+  const NexusWebViewApp(
+      {super.key, required this.initialUrl, required this.fallbackUrl});
 
   @override
   _NexusWebViewAppState createState() => _NexusWebViewAppState();
 }
+
+const _cookieStoreKey = 'nexus_persisted_cookies';
 
 class _NexusWebViewAppState extends State<NexusWebViewApp> {
   late InAppWebViewController webViewController;
@@ -20,11 +29,94 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   bool _isCheckingDB = false;
   bool _firstLoad = true;
   bool _showSplash = true;
+  bool _cookiesRestored = false;
+  bool _fallbackActive = false;
+  Timer? _initialLoadTimeoutTimer;
   String _dbName = '';
 
   @override
   void initState() {
     super.initState();
+    _restoreCookies().then((_) {
+      if (mounted) {
+        setState(() {
+          _cookiesRestored = true;
+        });
+        _startInitialLoadTimeoutTimer();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _initialLoadTimeoutTimer?.cancel();
+    super.dispose();
+  }
+
+  // If the primary URL hasn't finished loading within 20s, switch to the
+  // fallback URL
+  void _startInitialLoadTimeoutTimer() {
+    _initialLoadTimeoutTimer = Timer(const Duration(seconds: 20), () {
+      if (_firstLoad && !_fallbackActive && mounted) {
+        _fallbackActive = true;
+        webViewController.loadUrl(
+            urlRequest: URLRequest(url: WebUri(widget.fallbackUrl)));
+      }
+    });
+  }
+
+  // Replays cookies saved when logged in to persist app login
+  Future<void> _restoreCookies() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_cookieStoreKey);
+    if (stored == null || stored.isEmpty) return;
+
+    final defaultDomain = WebUri(widget.initialUrl).host;
+    try {
+      final List<dynamic> savedCookies = jsonDecode(stored);
+      for (final entry in savedCookies) {
+        final map = entry as Map<String, dynamic>;
+        final domain = (map['domain'] as String?) ?? defaultDomain;
+        await CookieManager.instance().setCookie(
+          url: WebUri('https://$domain'),
+          name: map['name'] as String,
+          value: map['value'] as String,
+          path: (map['path'] as String?) ?? '/',
+          domain: domain,
+          isSecure: map['isSecure'] as bool?,
+        );
+      }
+    } catch (e) {
+      print('Failed to restore cookies: $e');
+    }
+  }
+
+  Future<void> _handleDownload(DownloadStartRequest request) async {
+    try {
+      final cookies =
+          await CookieManager.instance().getCookies(url: request.url);
+      final cookieHeader =
+          cookies.map((c) => '${c.name}=${c.value}').join('; ');
+
+      final fileName = (request.suggestedFilename?.isNotEmpty ?? false)
+          ? request.suggestedFilename!
+          : request.url.pathSegments.isNotEmpty
+              ? request.url.pathSegments.last
+              : 'download';
+
+      final dir = await getTemporaryDirectory();
+      final filePath = '${dir.path}/$fileName';
+
+      await Dio().download(
+        request.url.toString(),
+        filePath,
+        options: Options(headers: {'Cookie': cookieHeader}),
+      );
+
+      await OpenFilex.open(filePath);
+    } catch (e) {
+      print('Failed to download/open file: $e');
+    }
   }
 
   @override
@@ -44,111 +136,134 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
         body: SafeArea(
           bottom: false,
           child: Padding(
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom * 0.5),
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).padding.bottom * 0.5),
             child: Stack(
-            children: [
-              Column(
-                children: [
-                  Expanded(
-                    child: InAppWebView(
-                      initialSettings: InAppWebViewSettings(
-                        javaScriptEnabled: true,
-                        useHybridComposition: true,
-                        supportMultipleWindows: true,
-                        javaScriptCanOpenWindowsAutomatically: true,
-                        // The webapp handles its own zoom/pan (e.g. the 3D plot); the
-                        // native WebView must never intercept pinch/double-tap zoom.
-                        supportZoom: false,
-                        builtInZoomControls: false,
-                        displayZoomControls: false,
-                        minimumZoomScale: 1.0,
-                        maximumZoomScale: 1.0,
-                      ),
-                      initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
-                      onWebViewCreated: (controller) {
-                        webViewController = controller;
-                      },
-                      onLoadStart: (controller, url) async {
-                        setState(() {
-                          _dbName = '';
-                        });
-                      },
-                      onLoadStop: (controller, url) async {
-                        if (_firstLoad) {
-                          _firstLoad = false;
-                          setState(() {
-                            _showSplash = false;
-                          });
-                        }
-
-                        if (url != null) {
-                          final cookies = await CookieManager.instance().getCookies(url: url);
-                          SharedPreferences prefs = await SharedPreferences.getInstance();
-
-                          for (var cookie in cookies) {
-                            await prefs.setString('cookie_${cookie.name}', cookie.value);
-                            print('Cooky: ${cookie.name}');
-                          }
-                          print("Cookies saved to SharedPreferences.");
-                        }
-
-                        if (Platform.isIOS) {
-                          await _hideGoogleSignInButton(controller);
-                        }
-
-                        if (url.toString().contains('login')) {
-                          setState(() {
-                            _isLoggedIn = false;
-                          });
-                        } else {
-                          setState(() {
-                            _isLoggedIn = true;
-                          });
-                          _startCheckingForDB(controller);
-                        }
-                      },
-                      onJsAlert: (controller, jsAlertRequest) async {
-                        String message = jsAlertRequest.message ?? 'NO MESSAGE';
-                        return await showDialog(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('JS Alert'),
-                                content: Text(message),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(
-                                      context,
-                                      JsAlertResponse(
-                                        handledByClient: true,
-                                        action: JsAlertResponseAction.CONFIRM,
-                                      ),
-                                    ),
-                                    child: const Text('OK'),
-                                  ),
-                                ],
+              children: [
+                Column(
+                  children: [
+                    Expanded(
+                      child: !_cookiesRestored
+                          ? const SizedBox.shrink()
+                          : InAppWebView(
+                              initialSettings: InAppWebViewSettings(
+                                javaScriptEnabled: true,
+                                useHybridComposition: true,
+                                supportMultipleWindows: true,
+                                javaScriptCanOpenWindowsAutomatically: true,
+                                // The webapp handles its own zoom/pan the
+                                // native WebView must NEVER intercept pinch/double-tap zoom.
+                                supportZoom: false,
+                                builtInZoomControls: false,
+                                displayZoomControls: false,
+                                minimumZoomScale: 1.0,
+                                maximumZoomScale: 1.0,
+                                // use open
+                                useOnDownloadStart: true,
                               ),
-                            ) ??
-                            JsAlertResponse(
-                              handledByClient: false,
-                            );
-                      },
-                      onProgressChanged: (controller, progress) {
-                        if (progress == 100) {
-                          setState(() {});
-                        }
-                      },
-                      onCreateWindow: (controller, createWindowAction) => _openPopupWindow(createWindowAction),
+                              initialUrlRequest:
+                                  URLRequest(url: WebUri(widget.initialUrl)),
+                              onWebViewCreated: (controller) {
+                                webViewController = controller;
+                              },
+                              onDownloadStartRequest:
+                                  (controller, downloadStartRequest) =>
+                                      _handleDownload(downloadStartRequest),
+                              onLoadStart: (controller, url) async {
+                                setState(() {
+                                  _dbName = '';
+                                });
+                              },
+                              onLoadStop: (controller, url) async {
+                                if (_firstLoad) {
+                                  _firstLoad = false;
+                                  _initialLoadTimeoutTimer?.cancel();
+                                  setState(() {
+                                    _showSplash = false;
+                                  });
+                                }
+
+                                if (url != null) {
+                                  final cookies = await CookieManager.instance()
+                                      .getCookies(url: url);
+                                  SharedPreferences prefs =
+                                      await SharedPreferences.getInstance();
+
+                                  final savedCookies = cookies
+                                      .map((cookie) => {
+                                            'name': cookie.name,
+                                            'value': cookie.value,
+                                            'domain': cookie.domain ?? url.host,
+                                            'path': cookie.path ?? '/',
+                                            'isSecure': cookie.isSecure,
+                                          })
+                                      .toList();
+                                  await prefs.setString(_cookieStoreKey,
+                                      jsonEncode(savedCookies));
+                                }
+
+                                if (Platform.isIOS) {
+                                  await _hideGoogleSignInButton(controller);
+                                  await _hideMicrosoftSignInButton(controller);
+                                }
+
+                                if (url.toString().contains('login')) {
+                                  setState(() {
+                                    _isLoggedIn = false;
+                                  });
+                                } else {
+                                  setState(() {
+                                    _isLoggedIn = true;
+                                  });
+                                  _startCheckingForDB(controller);
+                                }
+                              },
+                              onJsAlert: (controller, jsAlertRequest) async {
+                                String message =
+                                    jsAlertRequest.message ?? 'NO MESSAGE';
+                                return await showDialog(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('JS Alert'),
+                                        content: Text(message),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(
+                                              context,
+                                              JsAlertResponse(
+                                                handledByClient: true,
+                                                action: JsAlertResponseAction
+                                                    .CONFIRM,
+                                              ),
+                                            ),
+                                            child: const Text('OK'),
+                                          ),
+                                        ],
+                                      ),
+                                    ) ??
+                                    JsAlertResponse(
+                                      handledByClient: false,
+                                    );
+                              },
+                              onProgressChanged: (controller, progress) {
+                                if (progress == 100) {
+                                  setState(() {});
+                                }
+                              },
+                              onCreateWindow:
+                                  (controller, createWindowAction) =>
+                                      _openPopupWindow(createWindowAction),
+                            ),
                     ),
-                  ),
-                ],
-              ),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 350),
-                child: _showSplash
-                    ? const NexusSplashOverlay(key: ValueKey('splash'))
-                    : const SizedBox.shrink(key: ValueKey('empty')),
-              ),
-            ],
+                  ],
+                ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  child: _showSplash
+                      ? const NexusSplashOverlay(key: ValueKey('splash'))
+                      : const SizedBox.shrink(key: ValueKey('empty')),
+                ),
+              ],
             ),
           ),
         ),
@@ -157,10 +272,6 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   }
 
   Future<bool> _openPopupWindow(CreateWindowAction createWindowAction) async {
-    // Forget any existing Google session so the account picker is shown
-    // every time, instead of silently reusing the last signed-in account.
-    // Popups can start on 'about:blank' before JS navigates them to the
-    // real Google URL, so this isn't gated on the popup's initial host.
     await _forgetGoogleSession();
 
     await Navigator.of(context).push(
@@ -176,7 +287,8 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
           body: SafeArea(
             bottom: false,
             child: Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom * 0.6),
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).padding.bottom * 0.6),
               child: InAppWebView(
                 windowId: createWindowAction.windowId,
                 initialSettings: InAppWebViewSettings(javaScriptEnabled: true),
@@ -190,10 +302,9 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
     return true;
   }
 
-  // Apple Guideline 4.8 requires an Apple-equivalent alongside any third-party login.
-  // The webapp's "Sign in with email" already requires the same manual account
-  // approval as Google, so on iOS we simply don't offer the Google option at all
-  Future<void> _hideGoogleSignInButton(InAppWebViewController controller) async {
+  // Apple Guideline 4.8 requires an Apple-equivalent alongside any third-party login - removing for now but can be added back if we ever do sign in with Apple
+  Future<void> _hideGoogleSignInButton(
+      InAppWebViewController controller) async {
     await controller.evaluateJavascript(source: """
       (function() {
         function hideGoogleSignIn() {
@@ -213,12 +324,39 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
     """);
   }
 
+  // Apple Guideline 4.8 requires an Apple-equivalent alongside any third-party login - removing for now but can be added back if we ever do sign in with Apple
+  Future<void> _hideMicrosoftSignInButton(
+      InAppWebViewController controller) async {
+    await controller.evaluateJavascript(source: """
+      (function() {
+        function hideMicrosoftSignIn() {
+          document.querySelectorAll('button').forEach(function(btn) {
+            var text = (btn.innerText || '').trim().toLowerCase();
+            if (text.indexOf('sign in with microsoft') !== -1) {
+              btn.style.display = 'none';
+            }
+          });
+        }
+        hideMicrosoftSignIn();
+        if (!window.__nexusHideMicrosoftObserver) {
+          window.__nexusHideMicrosoftObserver = new MutationObserver(hideMicrosoftSignIn);
+          window.__nexusHideMicrosoftObserver.observe(document.body, { childList: true, subtree: true });
+        }
+      })();
+    """);
+  }
+
   Future<void> _forgetGoogleSession() async {
-    for (final host in ['accounts.google.com', 'google.com', 'www.google.com']) {
+    for (final host in [
+      'accounts.google.com',
+      'google.com',
+      'www.google.com'
+    ]) {
       final url = WebUri('https://$host');
       final cookies = await CookieManager.instance().getCookies(url: url);
       for (final cookie in cookies) {
-        await CookieManager.instance().deleteCookie(url: url, name: cookie.name);
+        await CookieManager.instance()
+            .deleteCookie(url: url, name: cookie.name);
       }
     }
   }
@@ -243,7 +381,8 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
 
     while (_isCheckingDB) {
       // Get the DB name from the page
-      String? dbName = await controller.evaluateJavascript(source: 'window.dbNameValue || null;') as String?;
+      String? dbName = await controller.evaluateJavascript(
+          source: 'window.dbNameValue || null;') as String?;
 
       if (dbName != null && dbName.isNotEmpty) {
         List<String> split = dbName.split(' ');

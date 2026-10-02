@@ -6,6 +6,15 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'nexusapp.dart';
 
 String _currentUrl = 'https://nexus.imsi.org';
+String _fallbackUrl = 'https://nexus.imseismology.org';
+
+//DEV
+//String _currentUrl = 'https://hk47.au.imseismology.org:8030';
+//String _fallbackUrl = 'https://10.11.13.1:8030';
+
+//DEV LocalHost (requires `adb reverse tcp:12305 tcp:12305`)
+//String _currentUrl = 'https://172.25.3.36:12305';
+//String _fallbackUrl = 'https://172.25.3.36:12305';
 
 Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -76,7 +85,7 @@ class NexusMobile extends StatelessWidget {
           seedColor: const Color(0xFF051B2C),
         ),
       ),
-      home: NexusWebViewApp(initialUrl: _currentUrl),
+      home: NexusWebViewApp(initialUrl: _currentUrl, fallbackUrl: _fallbackUrl),
     );
   }
 }
