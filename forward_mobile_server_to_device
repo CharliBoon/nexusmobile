@@ -1,0 +1,1 @@
+/home/ims/Android/Sdk/platform-tools/adb -s EUH4C20401003015 reverse tcp:8010 tcp:8010
