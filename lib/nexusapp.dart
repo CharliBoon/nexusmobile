@@ -6,6 +6,8 @@ import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:nexusmobile/push/nexus_push.dart';
+import 'package:nexusmobile/push/push_sheet.dart';
 import 'package:nexusmobile/widgets/nexus_splash_overlay.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -23,21 +25,27 @@ class NexusWebViewApp extends StatefulWidget {
 }
 
 const _cookieStoreKey = 'nexus_persisted_cookies';
+const _databaseHandlerName = 'nexusDatabase';
 
 class _NexusWebViewAppState extends State<NexusWebViewApp> {
   late InAppWebViewController webViewController;
   bool _isLoggedIn = false;
-  bool _isCheckingDB = false;
   bool _firstLoad = true;
   bool _showSplash = true;
   bool _cookiesRestored = false;
   bool _fallbackActive = false;
   Timer? _initialLoadTimeoutTimer;
+  StreamSubscription<String>? _openedPushLinkSubscription;
+  String? _pendingPushLink;
   String _dbName = '';
 
   @override
   void initState() {
     super.initState();
+    _openedPushLinkSubscription =
+        NexusPush.instance.openedLinks.listen(_openPushLink);
+    NexusPush.instance.takeLaunchLink().then((link) => _pendingPushLink = link);
+
     _restoreCookies().then((_) {
       if (mounted) {
         setState(() {
@@ -51,7 +59,33 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   @override
   void dispose() {
     _initialLoadTimeoutTimer?.cancel();
+    _openedPushLinkSubscription?.cancel();
     super.dispose();
+  }
+
+  bool _keyboardVisible(BuildContext context) {
+    return MediaQuery.of(context).viewInsets.bottom > 0;
+  }
+
+  void _openPushLink(String link) {
+    final uri = Uri.tryParse(link);
+    final nexusHosts = {
+      Uri.parse(widget.initialUrl).host,
+      Uri.parse(widget.fallbackUrl).host,
+    };
+    if (uri == null || uri.scheme != 'https' || !nexusHosts.contains(uri.host)) {
+      return;
+    }
+
+    webViewController.loadUrl(urlRequest: URLRequest(url: WebUri(link)));
+  }
+
+  void _openPendingPushLink() {
+    final link = _pendingPushLink;
+    if (link == null) return;
+
+    _pendingPushLink = null;
+    _openPushLink(link);
   }
 
   // If the primary URL hasn't finished loading within 20s, switch to the
@@ -134,6 +168,17 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
         }
       },
       child: Scaffold(
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+        floatingActionButton: _isLoggedIn &&
+                _dbName.isNotEmpty &&
+                NexusPush.instance.isAvailable &&
+                !_keyboardVisible(context)
+            ? FloatingActionButton.small(
+                tooltip: 'Push notifications for $_dbName',
+                onPressed: () => NexusPushSheet.show(context, _dbName),
+                child: const Icon(Icons.notifications_outlined),
+              )
+            : null,
         body: SafeArea(
           bottom: false,
           child: Padding(
@@ -174,6 +219,11 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                               ]),
                               onWebViewCreated: (controller) {
                                 webViewController = controller;
+                                controller.addJavaScriptHandler(
+                                  handlerName: _databaseHandlerName,
+                                  callback: (args) => _onDatabaseFooterChanged(
+                                      args.isEmpty ? null : args.first),
+                                );
                               },
                               onDownloadStartRequest:
                                   (controller, downloadStartRequest) =>
@@ -202,6 +252,7 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                                   if (isLoginPage) {
                                     // Logged out (or session expired) - don't persist whatever's left in the cookie jar
                                     await prefs.remove(_cookieStoreKey);
+                                    NexusPush.instance.setSession(null);
                                   } else {
                                     final cookies = await CookieManager
                                         .instance()
@@ -218,6 +269,12 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                                         .toList();
                                     await prefs.setString(_cookieStoreKey,
                                         jsonEncode(savedCookies));
+
+                                    final session = cookies
+                                        .where((c) => c.name == 'session')
+                                        .firstOrNull
+                                        ?.value;
+                                    NexusPush.instance.setSession(session);
                                   }
                                 }
 
@@ -229,12 +286,14 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                                 if (isLoginPage) {
                                   setState(() {
                                     _isLoggedIn = false;
+                                    _dbName = '';
                                   });
                                 } else {
                                   setState(() {
                                     _isLoggedIn = true;
                                   });
-                                  _startCheckingForDB(controller);
+                                  _watchDatabaseFooter(controller);
+                                  _openPendingPushLink();
                                 }
                               },
                               onJsAlert: (controller, jsAlertRequest) async {
@@ -380,47 +439,41 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
     }
   }
 
-  void _startCheckingForDB(InAppWebViewController controller) async {
-    _isCheckingDB = true;
-
-    // Observe the DB field in the page
+  Future<void> _watchDatabaseFooter(InAppWebViewController controller) async {
     await controller.evaluateJavascript(source: """
-    (function() {
-      var observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-          var dbField = document.getElementById('dbFooter');
-          if (dbField) {
-            window.dbNameValue = dbField.textContent || '';
+      (function() {
+        function report() {
+          var footer = document.getElementById('dbFooter');
+          var text = footer ? (footer.textContent || '').trim() : '';
+          if (text !== window.__nexusLastDatabaseText) {
+            window.__nexusLastDatabaseText = text;
+            window.flutter_inappwebview.callHandler('$_databaseHandlerName', text);
           }
-        });
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-    })();
-  """);
-
-    while (_isCheckingDB) {
-      // Get the DB name from the page
-      String? dbName = await controller.evaluateJavascript(
-          source: 'window.dbNameValue || null;') as String?;
-
-      if (dbName != null && dbName.isNotEmpty) {
-        List<String> split = dbName.split(' ');
-        String processedDBName = split.last.trim();
-
-        if (processedDBName.contains('IMS') && _dbName != processedDBName) {
-          setState(() {
-            _dbName = processedDBName;
-            _isLoggedIn = true;
-            _isCheckingDB = false;
-          });
         }
-      } else {
-        setState(() {
-          _dbName = '';
-        });
-      }
+        if (!window.__nexusDatabaseObserver) {
+          window.__nexusDatabaseObserver = new MutationObserver(report);
+          window.__nexusDatabaseObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+        }
+        report();
+      })();
+    """);
+  }
 
-      await Future.delayed(const Duration(seconds: 1));
+  void _onDatabaseFooterChanged(Object? footerText) {
+    final database = _databaseFromFooter(footerText);
+
+    if (mounted && database != _dbName) {
+      setState(() {
+        _dbName = database;
+      });
     }
+  }
+
+  // "Database: Kusasalethu - elkIMS" is the database elkIMS, nothing selected gives ''
+  String _databaseFromFooter(Object? footerText) {
+    final match =
+        RegExp(r'^Database:\s*(.+)$').firstMatch(footerText is String ? footerText.trim() : '');
+
+    return match == null ? '' : match.group(1)!.trim().split(RegExp(r'\s+')).last;
   }
 }

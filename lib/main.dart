@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 import 'nexusapp.dart';
+import 'push/nexus_push.dart';
 
 String _currentUrl = 'https://nexus.imsi.org';
 String _fallbackUrl = 'https://nexus.imseismology.org';
@@ -68,6 +69,8 @@ Future<void> main() async {
       return; // Do not proceed further
     }
   }
+
+  await NexusPush.instance.start();
 
   runApp(NexusMobile());
   FlutterNativeSplash.remove();
