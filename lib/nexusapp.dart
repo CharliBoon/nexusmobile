@@ -26,6 +26,43 @@ class NexusWebViewApp extends StatefulWidget {
 
 const _cookieStoreKey = 'nexus_persisted_cookies';
 const _databaseHandlerName = 'nexusDatabase';
+const _popupHandlerName = 'nexusPopup';
+const _actionsButtonHandlerName = 'nexusActionsButton';
+
+// How the web app's own three dot button looks and where it is, the bell copies it
+class _ActionsButton {
+  final double centerY;
+  final double size;
+  final Color background;
+  final Color icon;
+  final Color? shadow;
+
+  _ActionsButton(this.centerY, this.size, this.background, this.icon, this.shadow);
+
+  static _ActionsButton? from(Object? data) {
+    if (data is! Map) return null;
+
+    final background = _cssColor(data['background']);
+    final icon = _cssColor(data['icon']);
+    final centerY = data['centerY'], size = data['size'];
+
+    if (background == null || icon == null) return null;
+    if (centerY is! num || size is! num) return null;
+
+    return _ActionsButton(centerY.toDouble(), size.toDouble(), background, icon,
+        _cssColor(data['shadow']));
+  }
+
+  // The browser gives colours as "rgb(13, 34, 48)" or "rgba(13, 34, 48, 0.5)"
+  static Color? _cssColor(Object? css) {
+    final match = RegExp(r'rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)')
+        .firstMatch(css is String ? css : '');
+    if (match == null) return null;
+
+    return Color.fromRGBO(int.parse(match.group(1)!), int.parse(match.group(2)!),
+        int.parse(match.group(3)!), double.tryParse(match.group(4) ?? '') ?? 1);
+  }
+}
 
 class _NexusWebViewAppState extends State<NexusWebViewApp> {
   late InAppWebViewController webViewController;
@@ -38,6 +75,8 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
   StreamSubscription<String>? _openedPushLinkSubscription;
   String? _pendingPushLink;
   String _dbName = '';
+  bool _popupOpen = false;
+  _ActionsButton? _actionsButton;
 
   @override
   void initState() {
@@ -168,17 +207,6 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
         }
       },
       child: Scaffold(
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-        floatingActionButton: _isLoggedIn &&
-                _dbName.isNotEmpty &&
-                NexusPush.instance.isAvailable &&
-                !_keyboardVisible(context)
-            ? FloatingActionButton.small(
-                tooltip: 'Push notifications for $_dbName',
-                onPressed: () => NexusPushSheet.show(context, _dbName),
-                child: const Icon(Icons.notifications_outlined),
-              )
-            : null,
         body: SafeArea(
           bottom: false,
           child: Padding(
@@ -224,6 +252,16 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                                   callback: (args) => _onDatabaseFooterChanged(
                                       args.isEmpty ? null : args.first),
                                 );
+                                controller.addJavaScriptHandler(
+                                  handlerName: _popupHandlerName,
+                                  callback: (args) => _onPopupChanged(
+                                      args.isNotEmpty && args.first == true),
+                                );
+                                controller.addJavaScriptHandler(
+                                  handlerName: _actionsButtonHandlerName,
+                                  callback: (args) => _onActionsButtonChanged(
+                                      args.isEmpty ? null : args.first),
+                                );
                               },
                               onDownloadStartRequest:
                                   (controller, downloadStartRequest) =>
@@ -231,6 +269,8 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                               onLoadStart: (controller, url) async {
                                 setState(() {
                                   _dbName = '';
+                                  _popupOpen = false;
+                                  _actionsButton = null;
                                 });
                               },
                               onLoadStop: (controller, url) async {
@@ -287,12 +327,16 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                                   setState(() {
                                     _isLoggedIn = false;
                                     _dbName = '';
+                                    _popupOpen = false;
+                                    _actionsButton = null;
                                   });
                                 } else {
                                   setState(() {
                                     _isLoggedIn = true;
                                   });
                                   _watchDatabaseFooter(controller);
+                                  _watchPopups(controller);
+                                  _watchActionsButton(controller);
                                   _openPendingPushLink();
                                 }
                               },
@@ -335,6 +379,7 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
                     ),
                   ],
                 ),
+                ..._buildNotificationsButton(),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 350),
                   child: _showSplash
@@ -457,6 +502,153 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
         report();
       })();
     """);
+  }
+
+  // The web app shows its popups as .n_modal elements that are hidden until they open
+  Future<void> _watchPopups(InAppWebViewController controller) async {
+    await controller.evaluateJavascript(source: """
+      (function() {
+        function report() {
+          var open = Array.prototype.some.call(
+              document.querySelectorAll('.n_modal'),
+              function(modal) { return window.getComputedStyle(modal).display !== 'none'; });
+          if (open !== window.__nexusLastPopupOpen) {
+            window.__nexusLastPopupOpen = open;
+            window.flutter_inappwebview.callHandler('$_popupHandlerName', open);
+          }
+        }
+        if (!window.__nexusPopupObserver) {
+          window.__nexusPopupObserver = new MutationObserver(report);
+          window.__nexusPopupObserver.observe(document.body,
+              { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+        }
+        report();
+      })();
+    """);
+  }
+
+  // The bell sits at the bottom centre, level with the web app's three dot button and in its
+  // colours, so it follows the theme. Without that button, no bell.
+  List<Widget> _buildNotificationsButton() {
+    final actions = _actionsButton;
+
+    if (actions == null ||
+        !_isLoggedIn ||
+        _dbName.isEmpty ||
+        !NexusPush.instance.isAvailable ||
+        _popupOpen ||
+        _keyboardVisible(context)) {
+      return [];
+    }
+
+    return [
+      AnimatedPositioned(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        left: 0,
+        right: 0,
+        top: actions.centerY - actions.size / 2,
+        height: actions.size,
+        child: Center(
+          child: SizedBox(
+            width: actions.size,
+            height: actions.size,
+            child: Tooltip(
+              message: 'Push notifications for $_dbName',
+              // The same shadow as the web app's button, a Material elevation is too faint for it
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                        color: actions.shadow ?? Colors.black26,
+                        offset: const Offset(0, 3),
+                        blurRadius: 3),
+                  ],
+                ),
+                child: Material(
+                  color: actions.background,
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => NexusPushSheet.show(context, _dbName),
+                    child: Icon(Icons.notifications_none_rounded,
+                        size: actions.size * 0.5, color: actions.icon),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _watchActionsButton(InAppWebViewController controller) async {
+    await controller.evaluateJavascript(source: """
+      (function() {
+        // Kept outside the body, so adding it is not seen as a change of the page
+        var probe = window.__nexusColourProbe;
+        if (!probe) {
+          probe = window.__nexusColourProbe = document.createElement('div');
+          probe.style.display = 'none';
+          document.documentElement.appendChild(probe);
+        }
+        function colour(property, value) {
+          probe.style[property] = '';
+          probe.style[property] = value;
+          return window.getComputedStyle(probe)[property];
+        }
+        function report() {
+          var button = document.getElementById('showActionsAction');
+          var box = button ? button.getBoundingClientRect() : null;
+          var visible = box && box.width > 0 && box.height > 0 &&
+              window.getComputedStyle(button).visibility !== 'hidden';
+          var info = visible ? {
+            centerY: box.top + box.height / 2,
+            size: button.offsetWidth,
+            background: colour('backgroundColor', 'var(--ims-colour, #F7F7F7)'),
+            icon: colour('color', 'var(--svg-fill, #484848)'),
+            shadow: colour('color', 'var(--ims-shadow-colour, rgba(0, 0, 0, 0.3))')
+          } : null;
+          var text = JSON.stringify(info);
+          if (text !== window.__nexusLastActionsButton) {
+            window.__nexusLastActionsButton = text;
+            window.flutter_inappwebview.callHandler('$_actionsButtonHandlerName', info);
+          }
+        }
+        var waiting = false;
+        function reportSoon() {
+          if (waiting) return;
+          waiting = true;
+          requestAnimationFrame(function() { waiting = false; report(); });
+        }
+        if (!window.__nexusActionsButtonObserver) {
+          window.__nexusActionsButtonObserver = new MutationObserver(reportSoon);
+          window.__nexusActionsButtonObserver.observe(document.body,
+              { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+          window.addEventListener('resize', reportSoon);
+          document.addEventListener('transitionend', reportSoon, true);
+        }
+        report();
+      })();
+    """);
+  }
+
+  void _onActionsButtonChanged(Object? data) {
+    if (mounted) {
+      setState(() {
+        _actionsButton = _ActionsButton.from(data);
+      });
+    }
+  }
+
+  void _onPopupChanged(bool open) {
+    if (mounted && open != _popupOpen) {
+      setState(() {
+        _popupOpen = open;
+      });
+    }
   }
 
   void _onDatabaseFooterChanged(Object? footerText) {

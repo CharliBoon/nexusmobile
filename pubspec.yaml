@@ -139,3 +139,9 @@ flutter_native_splash:
   # png file and should be sized for 4x pixel density.
   image: assets/icon/icon-2.png
 
+  # Android 12 and later draw their own startup screen, a logo in a coloured circle
+  android_12:
+    image: assets/icon/splash_android12.png
+    color: "#051B2C"
+    icon_background_color: "#15407D"
+

@@ -5,10 +5,12 @@ flutter_launcher_icons:
   android: "launcher_icon"
   # image_path_android: "assets/icon/icon.png"
   min_sdk_android: 21 # android min sdk min:16, default 21
-  # adaptive_icon_background: "assets/icon/background.png"
-  # adaptive_icon_foreground: "assets/icon/foreground.png"
-  # adaptive_icon_foreground_inset: 16
-  # adaptive_icon_monochrome: "assets/icon/monochrome.png"
+  # The logo is a rounded square with transparent corners, which Android puts on a white tile.
+  # As an adaptive icon the blue is the background and the white line art the foreground.
+  adaptive_icon_background: "#15407D"
+  adaptive_icon_foreground: "assets/icon/adaptive_foreground.png"
+  adaptive_icon_foreground_inset: 0
+  adaptive_icon_monochrome: "assets/icon/adaptive_monochrome.png"
 
   ios: true
   # image_path_ios: "assets/icon/icon.png"

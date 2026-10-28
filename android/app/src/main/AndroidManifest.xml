@@ -42,6 +42,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- The small icon and colour of push notifications. Without these Android shows
+             the launcher icon, which turns into a plain white square. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/ic_launcher_background" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
