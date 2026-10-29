@@ -553,35 +553,73 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
           child: SizedBox(
             width: actions.size,
             height: actions.size,
-            child: Tooltip(
-              message: 'Push notifications for $_dbName',
-              // The same shadow as the web app's button, a Material elevation is too faint for it
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                        color: actions.shadow ?? Colors.black26,
-                        offset: const Offset(0, 3),
-                        blurRadius: 3),
-                  ],
-                ),
-                child: Material(
-                  color: actions.background,
-                  shape: const CircleBorder(),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: () => NexusPushSheet.show(context, _dbName),
-                    child: Icon(Icons.notifications_none_rounded,
-                        size: actions.size * 0.5, color: actions.icon),
+            child: ListenableBuilder(
+              listenable: NexusPush.instance.changes,
+              builder: (context, _) => Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: Tooltip(
+                      message: 'Push notifications for $_dbName',
+                      // The same shadow as the web app's button, a Material elevation is too faint for it
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                                color: actions.shadow ?? Colors.black26,
+                                offset: const Offset(0, 3),
+                                blurRadius: 3),
+                          ],
+                        ),
+                        child: Material(
+                          color: actions.background,
+                          shape: const CircleBorder(),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () => NexusPushSheet.show(context, _dbName),
+                            child: Icon(Icons.notifications_none_rounded,
+                                size: actions.size * 0.5, color: actions.icon),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  _buildStatusDot(actions, NexusPush.instance.isOn(_dbName)),
+                ],
               ),
             ),
           ),
         ),
       ),
     ];
+  }
+
+  // A green dot on the bell's upper right edge while the phone gets notifications for the database
+  Widget _buildStatusDot(_ActionsButton actions, bool on) {
+    const dot = 13.0;
+    final inset = actions.size * 0.1464 - dot / 2; // where the circle's edge is at 45 degrees
+
+    return Positioned(
+      top: inset,
+      right: inset,
+      child: IgnorePointer(
+        child: AnimatedScale(
+          scale: on ? 1 : 0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: Container(
+            width: dot,
+            height: dot,
+            decoration: BoxDecoration(
+              color: const Color(0xFF2E9E5B),
+              shape: BoxShape.circle,
+              border: Border.all(color: actions.background, width: 2),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _watchActionsButton(InAppWebViewController controller) async {
@@ -658,6 +696,8 @@ class _NexusWebViewAppState extends State<NexusWebViewApp> {
       setState(() {
         _dbName = database;
       });
+
+      if (database.isNotEmpty) NexusPush.instance.preload(database);
     }
   }
 

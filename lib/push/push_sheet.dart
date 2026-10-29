@@ -28,6 +28,9 @@ const _spinnerColor = Color(0xFF0D2230);
 class _NexusPushSheetState extends State<NexusPushSheet> {
   bool _busy = true;
   bool _registered = false;
+  bool _toggling = false;
+  Completer<void> _toggleDone = Completer();
+  bool _rulesLoaded = false;
   NexusRules _rules = NexusRules(rules: {}, chosen: {});
   Set<String> _chosen = {}; // what the user ticked, shown at once
   Set<String> _savedChosen = {}; // what the server has
@@ -41,7 +44,16 @@ class _NexusPushSheetState extends State<NexusPushSheet> {
   @override
   void initState() {
     super.initState();
-    _loadStatus();
+
+    // Known from the last time or loaded ahead, then there is nothing to wait for
+    final ready = NexusPush.instance.ready(widget.database);
+    if (ready != null) {
+      _apply(ready);
+      _busy = false;
+      _refresh();
+    } else {
+      _loadStatus();
+    }
   }
 
   @override
@@ -63,11 +75,8 @@ class _NexusPushSheetState extends State<NexusPushSheet> {
 
     try {
       await action();
-    } on NexusPushException catch (e) {
-      _error = e.message;
     } catch (e) {
-      debugPrint('Push sheet failed: $e');
-      _error = 'Something went wrong. Please try again.';
+      _error = _messageOf(e);
     }
 
     if (mounted) {
@@ -77,29 +86,110 @@ class _NexusPushSheetState extends State<NexusPushSheet> {
     }
   }
 
+  String _messageOf(Object e) {
+    if (e is NexusPushException) return e.message;
+
+    debugPrint('Push sheet failed: $e');
+    return 'Something went wrong. Please try again.';
+  }
+
   Future<void> _loadStatus() {
     return _run(() async {
-      _registered = await NexusPush.instance.isRegistered(widget.database);
-      _setRules(_registered
-          ? await NexusPush.instance.fetchNotifications(widget.database)
-          : NexusRules(rules: {}, chosen: {}));
+      // First the phone, then the mobile server, then the rules
+      if (!await NexusPush.instance.notificationsAllowed()) {
+        _registered = false;
+        return;
+      }
+
+      _apply(await NexusPush.instance.load(widget.database));
     });
   }
 
-  Future<void> _toggle() {
-    return _run(() async {
-      if (_registered) {
-        await NexusPush.instance.unregister(widget.database);
-        _setRules(NexusRules(rules: {}, chosen: {}));
-      } else {
-        await NexusPush.instance.register(widget.database);
-        _setRules(await NexusPush.instance.fetchNotifications(widget.database));
+  // Shown at once from what is known, then the phone and the server are asked again quietly
+  Future<void> _refresh() async {
+    if (!await NexusPush.instance.notificationsAllowed()) {
+      if (mounted) {
+        setState(() {
+          _registered = false;
+        });
       }
-      _registered = !_registered;
+      return;
+    }
+
+    try {
+      final state = await NexusPush.instance.refresh(widget.database);
+
+      // Not while the user is changing something
+      if (!mounted ||
+          _busy ||
+          _toggling ||
+          _saving ||
+          !setEquals(_chosen, _savedChosen)) {
+        return;
+      }
+
+      setState(() {
+        _apply(state);
+      });
+    } catch (e) {
+      debugPrint('Could not refresh the notifications: $e'); // what is shown stays
+    }
+  }
+
+  void _apply(NexusPushState state) {
+    _registered = state.registered;
+    _setRules(state.rules);
+  }
+
+  Future<NexusPushState> _change(bool turnOn) {
+    return turnOn
+        ? NexusPush.instance.register(widget.database)
+        : NexusPush.instance.unregister(widget.database);
+  }
+
+  Future<void> _toggle() async {
+    // The earlier one is still with the server, so the loading shows until it is done
+    if (_toggling) {
+      setState(() {
+        _busy = true;
+      });
+
+      await _toggleDone.future;
+      if (!mounted) return;
+
+      setState(() {
+        _busy = false;
+      });
+      if (_error != null) return;
+    }
+
+    final turnOn = !_registered;
+
+    // Without the rules there is nothing to show yet, so they are waited for
+    if (!_rulesLoaded) return _run(() async => _apply(await _change(turnOn)));
+
+    // Shown at once, and put back when it does not work
+    _toggleDone = Completer();
+    setState(() {
+      _registered = turnOn;
+      _toggling = true;
+      _error = null;
     });
+
+    try {
+      _registered = (await _change(turnOn)).registered;
+    } catch (e) {
+      _registered = !turnOn;
+      _error = _messageOf(e);
+    }
+
+    _toggling = false;
+    _toggleDone.complete();
+    if (mounted) setState(() {});
   }
 
   void _setRules(NexusRules rules) {
+    _rulesLoaded = true;
     _saveTimer?.cancel();
     _rules = rules;
     _chosen = Set<String>.of(rules.chosen);
