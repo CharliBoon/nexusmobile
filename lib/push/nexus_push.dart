@@ -94,19 +94,11 @@ class NexusPush {
   String? _session;
   String? _token;
 
-  bool _allowed = false;
   final _readyStates = <String, NexusPushState>{};
   final _refreshes = <String, Future<NexusPushState>>{};
   Future<void> _savedLoaded = Future.value();
 
-  /// Changes when what the bell shows changes
-  final changes = ValueNotifier<int>(0);
-
   bool get isAvailable => _available;
-
-  /// Whether the phone gets notifications for the database
-  bool isOn(String database) =>
-      _allowed && (_readyStates[database]?.registered ?? false);
 
   Stream<String> get openedLinks => _openedLinks.stream;
 
@@ -160,7 +152,6 @@ class NexusPush {
     _readyStates.clear();
     _refreshes.clear();
     _savedLoaded = _loadSaved();
-    changes.value++;
   }
 
   /// Gets the push token, whether the phone is registered and the rules of the database ahead
@@ -201,23 +192,12 @@ class NexusPush {
     try {
       final settings = await FirebaseMessaging.instance.getNotificationSettings();
 
-      final allowed =
-          settings.authorizationStatus == AuthorizationStatus.authorized ||
-              settings.authorizationStatus == AuthorizationStatus.provisional;
-      _setAllowed(allowed);
-
-      return allowed;
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
     } catch (e) {
       debugPrint('Could not check the notification permission: $e');
       return true; // the server is asked then, which is what happened before this check
     }
-  }
-
-  void _setAllowed(bool allowed) {
-    if (allowed == _allowed) return;
-
-    _allowed = allowed;
-    changes.value++;
   }
 
   /// What is known of the database, from the last time or from the phone's memory
@@ -251,7 +231,6 @@ class NexusPush {
 
   NexusPushState _remember(String database, NexusPushState state) {
     _readyStates[database] = state;
-    changes.value++;
     unawaited(_saveStates());
 
     return state;
@@ -298,7 +277,6 @@ class NexusPush {
         _readyStates.putIfAbsent(database.toString(),
             () => NexusPushState.fromJson(Map<String, dynamic>.from(state as Map)));
       });
-      changes.value++;
     } catch (e) {
       debugPrint('Could not read the saved notifications: $e');
     }
@@ -334,8 +312,6 @@ class NexusPush {
       throw NexusPushException(
           'Notifications are turned off for this app. Turn them on in the phone settings and try again.');
     }
-
-    _setAllowed(true);
 
     await _post(_devicesPath, await _deviceBody(database));
     await _rememberDatabase(database, true);
